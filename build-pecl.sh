@@ -120,6 +120,21 @@ if len(kept) != 1:
 control.write_text(header.rstrip() + '\n\n' + kept[0].lstrip())
 print('Selected binary package:', kept[0].splitlines()[0])
 PY
+  # Sury enables igbinary for Redis, but not msgpack. Both serializers
+  # are required for compatibility with the existing Bellatrix installation.
+  if [[ "$package" == php-redis ]]; then
+    python3 - "$srcdir/debian/rules" <<'PYREDIS'
+from pathlib import Path
+import sys
+rules = Path(sys.argv[1])
+text = rules.read_text()
+flag = '--enable-redis-igbinary'
+if text.count(flag) != 1 or '--enable-redis-msgpack' in text:
+    raise SystemExit('Unexpected Redis configure flags in debian/rules; review packaging')
+rules.write_text(text.replace(flag, flag + ' --enable-redis-msgpack', 1))
+print('Redis: enabled msgpack serializer in debian/rules')
+PYREDIS
+  fi
   # Do not silently rely on the distro default PHP during dh-php package builds.
   grep -R "pkg-pecl.mk" "$srcdir/debian/rules" || true
   (cd "$srcdir" && dch --local '+legacy1~ubuntu20.04' --distribution focal \
