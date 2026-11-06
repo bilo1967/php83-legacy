@@ -17,11 +17,23 @@ mkdir -p "$OUT" "$WORK"
 
 apt-get update
 apt-get install -y --no-install-recommends \
-  ca-certificates curl python3 dpkg-dev devscripts debhelper dh-php \
+  ca-certificates curl python3 dpkg-dev devscripts debhelper \
   build-essential pkg-config autoconf automake libtool re2c \
   libmagickwand-dev libmemcached-dev libsasl2-dev zlib1g-dev \
   liblz4-dev libzstd-dev libssl-dev libhashkit-dev \
   libpcre3-dev libxml2-dev
+
+# Ubuntu Focal ships dh-php 0.35, but the current Sury PECL sources
+# require dh-php >= 5.5. Install Sury's newer architecture-independent
+# helper ONLY inside this throwaway build container.
+DH_PHP_VERSION='5.22+0~20260903.42+ubuntu22.04~1.gbpf43e56'
+DH_PHP_DEB="dh-php_${DH_PHP_VERSION}_all.deb"
+curl -fL --retry 3 \
+  "https://packages.sury.org/php/pool/main/d/dh-php/${DH_PHP_DEB}" \
+  -o "/tmp/${DH_PHP_DEB}"
+apt-get install -y --no-install-recommends "/tmp/${DH_PHP_DEB}"
+dpkg-query -W -f='${Version}\n' dh-php
+dpkg --compare-versions "$(dpkg-query -W -f='${Version}' dh-php)" ge '5.5~'
 
 # Use only the PHP packages from the selected, checksum-verified artifact.
 # Local packages are installed together so that APT may resolve their internal dependencies.
