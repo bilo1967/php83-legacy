@@ -106,10 +106,13 @@ header = parts[0]
 # php-all-dev would select PHP versions not present in this build environment.
 header = re.sub(r'php-all-dev\s*\([^)]*\)', 'php8.3-dev', header)
 header = re.sub(r'\bphp-all-dev\b', 'php8.3-dev', header)
-# For redis/memcached, consume the single-version extensions built above.
-header = re.sub(r'php[0-9]+\.[0-9]+-(igbinary|msgpack)\b', r'php8.3-\1', header)
-header = re.sub(r'php-(igbinary|msgpack)-all-dev\s*\([^)]*\)', r'php8.3-\1', header)
-header = re.sub(r'php-(igbinary|msgpack)-all-dev\b', r'php8.3-\1', header)
+# Restrict extension build dependencies to PHP 8.3.
+header = re.sub(r'php[0-9]+\.[0-9]+-(apcu|igbinary|msgpack)\b',
+                r'php8.3-\1', header)
+header = re.sub(r'php-(apcu|igbinary|msgpack)-all-dev\s*\([^)]*\)',
+                r'php8.3-\1', header)
+header = re.sub(r'php-(apcu|igbinary|msgpack)-all-dev\b',
+                r'php8.3-\1', header)
 # Rebuild ONLY php8.3-$extension, retaining Sury's metadata and maintainer scripts.
 kept = [p for p in parts[1:] if re.match(r'Package: php8\.3-' + re.escape(package[4:]) + r'\s*$', p.splitlines()[0])]
 if len(kept) != 1:
@@ -143,7 +146,7 @@ for ext in apcu igbinary msgpack redis imagick memcached; do
   fi
   cp "${produced[0]}" "$OUT/"
   dpkg-deb -f "${produced[0]}" Package Version Depends
-  if [[ $ext == igbinary || $ext == msgpack ]]; then
+  if [[ $ext == apcu || $ext == igbinary || $ext == msgpack ]]; then
     apt-get install -y --no-install-recommends "${produced[0]}"
   fi
 done
