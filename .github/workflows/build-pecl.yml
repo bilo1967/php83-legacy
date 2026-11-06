@@ -1,0 +1,71 @@
+name: Build PHP 8.3 PECL (Ubuntu 20.04)
+
+on:
+  workflow_dispatch:
+    inputs:
+      php_run_id:
+        description: 'Successful PHP build workflow run ID (artifact retained for 7 days)'
+        required: true
+        type: string
+        default: '42250131047'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  build-pecl:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Download PHP 8.3 packages from selected build
+        uses: actions/download-artifact@v4
+        with:
+          name: php8.3-ubuntu20.04-amd64
+          run-id: ${{ inputs.php_run_id }}
+          github-token: ${{ github.token }}
+          path: php-debs
+
+      - name: Check PHP artifact
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          cd php-debs
+          sha256sum -c SHA256SUMS
+          test -n "$(find . -maxdepth 1 -name 'php8.3-dev_*.deb' -print -quit)"
+          test -n "$(find . -maxdepth 1 -name 'php8.3-cli_*.deb' -print -quit)"
+          test -n "$(find . -maxdepth 1 -name 'php8.3-common_*.deb' -print -quit)"
+          version=$(dpkg-deb -f php8.3-dev_*.deb Version)
+          case "$version" in
+            8.3.36*+legacy*ubuntu20.04) echo "Validated PHP: $version" ;;
+            *) echo "Unexpected PHP package version: $version" >&2; exit 1 ;;
+          esac
+
+      - name: Build PECL using Ubuntu 20.04 container
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p pecl-out
+          docker run --rm --platform linux/amd64 \
+            -e DEBIAN_FRONTEND=noninteractive \
+            -v "$PWD:/repo:ro" \
+            -v "$PWD/php-debs:/php-debs:ro" \
+            -v "$PWD/pecl-out:/out" \
+            ubuntu:20.04 bash /repo/build-pecl.sh \
+            > pecl-out/build-pecl.log 2>&1 || {
+              cat pecl-out/build-pecl.log
+              exit 1
+            }
+          cat pecl-out/build-pecl.log
+
+      - name: Upload results (including logs on failure)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: php8.3-pecl-ubuntu20.04-amd64
+          path: pecl-out/
+          retention-days: 7
