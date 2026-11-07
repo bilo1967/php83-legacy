@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 export DEBIAN_FRONTEND=noninteractive
-export DEBFULLNAME='php83-legacy contributors'
+export DEBFULLNAME='php-legacy contributors'
 export DEBEMAIL='noreply@github.com'
 
 log() { printf '\n>>> %s\n' "$*"; }
@@ -39,9 +39,9 @@ sha256sum -c /repo/sources.sha256
 
 # Select the one pinned .dsc, without guessing package file names.
 shopt -s nullglob
-dsc_files=(php8.3_*.dsc)
+dsc_files=(php8.4_*.dsc)
 ((${#dsc_files[@]} == 1)) || {
-  echo "Expected exactly one php8.3 .dsc; found ${#dsc_files[@]}" >&2
+  echo "Expected exactly one php8.4 .dsc; found ${#dsc_files[@]}" >&2
   exit 1
 }
 log 'Unpacking the unmodified Sury source package'
@@ -53,7 +53,7 @@ cd /build/php
 # is observed. In particular, do not reuse PHP 7.4 sed patches blindly.
 upstream_version=$(dpkg-parsechangelog -S Version)
 case "$upstream_version" in
-  *8.3.36*) ;;
+  *8.4.27*) ;;
   *) echo "Unexpected PHP source version: $upstream_version" >&2; exit 1 ;;
 esac
 # Append the legacy revision after the complete Sury Debian version.
@@ -62,7 +62,7 @@ package_version="${upstream_version}+legacy${REVISION}~ubuntu20.04"
 log "Building package version $package_version"
 dch --force-distribution --newversion "$package_version" \
   --distribution "$codename" \
-  'Rebuild upstream Sury PHP 8.3 packages for Ubuntu 20.04.'
+  'Rebuild upstream Sury PHP 8.4 packages for Ubuntu 20.04.'
 
 # Diagnose dependency failures instead of silently removing requirements.
 log 'Installing the build dependencies specified by Sury'
