@@ -1,5 +1,4 @@
-
-name: Build PHP 8.3 Legacy
+name: Build PHP 8.4 Legacy
 
 on:
   workflow_dispatch:
@@ -13,7 +12,7 @@ defaults:
 
 env:
   REVISION: '1'
-  SOURCE_URL: https://packages.sury.org/php/pool/main/p/php8.3
+  SOURCE_URL: https://packages.sury.org/php/pool/main/p/php8.4
 
 jobs:
   build:
@@ -58,7 +57,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: php8.3-ubuntu20.04-amd64
+          name: php8.4-ubuntu20.04-amd64
           path: out/
           retention-days: 7
-  
