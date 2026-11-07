@@ -1,4 +1,5 @@
-name: Attach PHP 8.3 packages to draft release
+
+name: Attach PHP packages to draft release
 
 on:
   workflow_dispatch:
@@ -6,16 +7,14 @@ on:
       php_run_id:
         description: 'Successful PHP build run ID'
         required: true
-        default: '42250131047'
         type: string
       pecl_run_id:
-        description: 'Successful PECL build run ID (with Redis msgpack fix)'
+        description: 'Successful PECL build run ID'
         required: true
         type: string
       release_tag:
-        description: 'Existing draft release tag'
+        description: 'Existing draft release tag (e.g. v8.4.27-focal.1)'
         required: true
-        default: 'v8.3.36-focal.1'
         type: string
 
 permissions:
@@ -23,14 +22,32 @@ permissions:
   contents: write
 
 concurrency:
-  group: publish-php83-focal
+  group: publish-php-focal
   cancel-in-progress: false
 
 jobs:
   attach:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+
     steps:
+      - name: Determine PHP version from release tag
+        env:
+          TAG: ${{ inputs.release_tag }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          if [[ "$TAG" =~ ^v(8\.[0-9]+)\.[0-9]+-focal\.[0-9]+$ ]]; then
+            PHP_MINOR="${BASH_REMATCH[1]}"
+          else
+            echo "Invalid release tag: $TAG"
+            exit 1
+          fi
+
+          echo "PHP_MINOR=$PHP_MINOR" >> "$GITHUB_ENV"
+          echo "Publishing PHP $PHP_MINOR to $TAG"
+
       - name: Download selected build artifacts
         env:
           GH_TOKEN: ${{ github.token }}
@@ -40,36 +57,73 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
+
           mkdir -p artifacts/php artifacts/pecl
+
           gh run download "$PHP_RUN" --repo "$REPO" \
-            --name php8.3-ubuntu20.04-amd64 --dir artifacts/php
+            --name "php${PHP_MINOR}-ubuntu20.04-amd64" \
+            --dir artifacts/php
+
           gh run download "$PECL_RUN" --repo "$REPO" \
-            --name php8.3-pecl-ubuntu20.04-amd64 --dir artifacts/pecl
+            --name "php${PHP_MINOR}-pecl-ubuntu20.04-amd64" \
+            --dir artifacts/pecl
 
       - name: Validate and stage Debian packages
         shell: bash
         run: |
           set -Eeuo pipefail
+
           mkdir -p release-assets
           shopt -s nullglob globstar
+
           php_debs=(artifacts/php/**/*.deb)
           pecl_debs=(artifacts/pecl/**/*.deb)
+
           echo "PHP packages: ${#php_debs[@]}"
           echo "PECL packages: ${#pecl_debs[@]}"
-          (( ${#php_debs[@]} >= 30 )) || { echo 'Missing PHP packages'; exit 1; }
-          (( ${#pecl_debs[@]} == 6 )) || { echo 'Expected exactly six PECL packages'; exit 1; }
+
+          (( ${#php_debs[@]} >= 30 )) || {
+            echo 'Missing PHP packages'
+            exit 1
+          }
+
+          (( ${#pecl_debs[@]} == 6 )) || {
+            echo 'Expected exactly six PECL packages'
+            exit 1
+          }
+
+          for package in cli fpm common ldap; do
+            matches=(artifacts/php/**/php"${PHP_MINOR}"-"${package}"_*.deb)
+            (( ${#matches[@]} == 1 )) || {
+              echo "Missing/duplicate PHP package: $package"
+              exit 1
+            }
+          done
 
           for extension in apcu igbinary msgpack redis imagick memcached; do
-            matches=(artifacts/pecl/**/php8.3-"$extension"_*.deb)
-            (( ${#matches[@]} == 1 )) || { echo "Missing/duplicate: $extension"; exit 1; }
+            matches=(artifacts/pecl/**/php"${PHP_MINOR}"-"${extension}"_*.deb)
+            (( ${#matches[@]} == 1 )) || {
+              echo "Missing/duplicate PECL package: $extension"
+              exit 1
+            }
           done
 
           for file in "${php_debs[@]}" "${pecl_debs[@]}"; do
             name="${file##*/}"
-            [[ ! -e "release-assets/$name" ]] || { echo "Duplicate package: $name"; exit 1; }
+
+            [[ ! -e "release-assets/$name" ]] || {
+              echo "Duplicate package: $name"
+              exit 1
+            }
+
             cp -- "$file" "release-assets/$name"
           done
-          (cd release-assets && sha256sum ./*.deb > SHA256SUMS)
+
+          (
+            cd release-assets
+            sha256sum ./*.deb > SHA256SUMS
+          )
+
           echo "Staged $(find release-assets -maxdepth 1 -name '*.deb' | wc -l) packages"
 
       - name: Upload assets to existing draft
@@ -80,7 +134,21 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          draft="$(gh release view "$TAG" --repo "$REPO" --json isDraft --jq '.isDraft')"
-          [[ "$draft" == 'true' ]] || { echo "Release $TAG not found or not a draft"; exit 1; }
-          gh release upload "$TAG" release-assets/*.deb release-assets/SHA256SUMS --repo "$REPO"
-          echo "Attached assets to draft release $TAG. Draft remains unpublished."
+
+          draft="$(gh release view "$TAG" \
+            --repo "$REPO" \
+            --json isDraft \
+            --jq '.isDraft')"
+
+          [[ "$draft" == 'true' ]] || {
+            echo "Release $TAG not found or not a draft"
+            exit 1
+          }
+
+          gh release upload "$TAG" \
+            release-assets/*.deb \
+            release-assets/SHA256SUMS \
+            --repo "$REPO"
+
+          echo "Attached assets to draft release $TAG"
+          echo "Draft remains unpublished."
