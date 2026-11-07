@@ -30,7 +30,7 @@ log 'Installing native Ubuntu build tools'
 apt-get update
 apt-get install -y --no-install-recommends \
   build-essential devscripts equivs dpkg-dev debhelper \
-  ca-certificates pkg-config
+  ca-certificates pkg-config curl
 
 mkdir -p /build /out
 cd /sources
@@ -80,6 +80,21 @@ find /build -maxdepth 1 -type f \
   \( -name '*.buildinfo' -o -name '*.changes' \) \
   -exec cp {} /out/ \;
 dpkg-query -W -f='${binary:Package}\t${Version}\n' > /out/build-dependencies.txt
+
+# PHP 8.4 needs php-common >= 2:95~, newer than Focal's 2:75.
+# This exact Sury architecture-independent package has been installed
+# successfully in the Ubuntu 20.04 PECL build container.
+# Bundle it with PHP packages, so deployments are self-contained.
+php_common_version='101+0~20261021.78+ubuntu22.04~1.gbp53f25f'
+php_common_file="php-common_${php_common_version}_all.deb"
+php_common_url="https://packages.sury.org/php/pool/main/p/php-defaults/${php_common_file}"
+log "Bundling Sury php-common 2:${php_common_version}"
+curl -fsSL --retry 3 --retry-delay 2 "$php_common_url" -o "/out/${php_common_file}"
+[[ "$(dpkg-deb -f "/out/${php_common_file}" Package)" == 'php-common' ]]
+[[ "$(dpkg-deb -f "/out/${php_common_file}" Version)" == "2:${php_common_version}" ]]
+[[ "$(dpkg-deb -f "/out/${php_common_file}" Architecture)" == 'all' ]]
+printf '%s\n' "$php_common_url" > /out/php-common-source-url.txt
+
 cd /out
 sha256sum ./*.deb > SHA256SUMS
 log 'Build finished successfully'
