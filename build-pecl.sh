@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Experimental: rebuild Sury PECL Debian source packages for PHP 8.3 on Ubuntu 20.04.
+# Experimental: rebuild Sury PECL Debian source packages for PHP 8.4 on Ubuntu 20.04.
 set -Eeuo pipefail
 export DEBIAN_FRONTEND=noninteractive
 export DEBEMAIL="build@localhost"
-export DEBFULLNAME="PHP 8.3 Legacy Build"
+export DEBFULLNAME="PHP 8.4 Legacy Build"
 export TZ=Etc/UTC
-export PHP_VERSIONS=8.3
-export PHP_DEFAULT_VERSION=8.3
+export PHP_VERSIONS=8.4
+export PHP_DEFAULT_VERSION=8.4
 export DEB_BUILD_OPTIONS="nocheck parallel=4"
 umask 022
 
@@ -38,16 +38,16 @@ dpkg --compare-versions "$(dpkg-query -W -f='${Version}' dh-php)" ge '5.5~'
 # Use only the PHP packages from the selected, checksum-verified artifact.
 # Local packages are installed together so that APT may resolve their internal dependencies.
 mapfile -t php_packages < <(find "$PHP_DEBS" -maxdepth 1 -type f -name '*.deb' \
-  \( -name 'php8.3-common_*' -o -name 'php8.3-cli_*' -o -name 'php8.3-dev_*' \
-  -o -name 'php8.3-opcache_*' -o -name 'php8.3-readline_*' \) | sort)
+  \( -name 'php8.4-common_*' -o -name 'php8.4-cli_*' -o -name 'php8.4-dev_*' \
+  -o -name 'php8.4-opcache_*' -o -name 'php8.4-readline_*' \) | sort)
 if (( ${#php_packages[@]} != 5 )); then
   echo "Expected five base PHP packages; got ${#php_packages[@]}" >&2
   exit 1
 fi
 apt-get install -y --no-install-recommends "${php_packages[@]}"
-php8.3 -v
-php-config8.3 --version
-[[ $(php-config8.3 --phpapi) == 20230831 ]]
+php8.4 -v
+php-config8.4 --version
+[[ $(php-config8.4 --phpapi) == 20240924 ]]
 
 # Fetch the Ubuntu 22.04 Sury .dsc and the exact files listed in its SHA256 stanza.
 # No generated upstream source archives are substituted for Sury's Debian source.
@@ -104,19 +104,19 @@ s = control.read_text()
 parts = re.split(r'\n(?=Package: )', s)
 header = parts[0]
 # php-all-dev would select PHP versions not present in this build environment.
-header = re.sub(r'php-all-dev\s*\([^)]*\)', 'php8.3-dev', header)
-header = re.sub(r'\bphp-all-dev\b', 'php8.3-dev', header)
-# Restrict extension build dependencies to PHP 8.3.
+header = re.sub(r'php-all-dev\s*\([^)]*\)', 'php8.4-dev', header)
+header = re.sub(r'\bphp-all-dev\b', 'php8.4-dev', header)
+# Restrict extension build dependencies to PHP 8.4.
 header = re.sub(r'php[0-9]+\.[0-9]+-(apcu|igbinary|msgpack)\b',
-                r'php8.3-\1', header)
+                r'php8.4-\1', header)
 header = re.sub(r'php-(apcu|igbinary|msgpack)-all-dev\s*\([^)]*\)',
-                r'php8.3-\1', header)
+                r'php8.4-\1', header)
 header = re.sub(r'php-(apcu|igbinary|msgpack)-all-dev\b',
-                r'php8.3-\1', header)
-# Rebuild ONLY php8.3-$extension, retaining Sury's metadata and maintainer scripts.
+                r'php8.4-\1', header)
+# Rebuild ONLY php8.4-$extension, retaining Sury's metadata and maintainer scripts.
 kept = [p for p in parts[1:] if re.match(r'Package: php8\.3-' + re.escape(package[4:]) + r'\s*$', p.splitlines()[0])]
 if len(kept) != 1:
-    raise SystemExit(f'Cannot identify unique php8.3 binary stanza in {control}: {[p.splitlines()[0] for p in parts[1:]]}')
+    raise SystemExit(f'Cannot identify unique php8.4 binary stanza in {control}: {[p.splitlines()[0] for p in parts[1:]]}')
 control.write_text(header.rstrip() + '\n\n' + kept[0].lstrip())
 print('Selected binary package:', kept[0].splitlines()[0])
 PY
@@ -138,7 +138,7 @@ PYREDIS
   # Do not silently rely on the distro default PHP during dh-php package builds.
   grep -R "pkg-pecl.mk" "$srcdir/debian/rules" || true
   (cd "$srcdir" && dch --local '+legacy1~ubuntu20.04' --distribution focal \
-     'Rebuild Sury PECL packaging for Ubuntu 20.04 / PHP 8.3 only')
+     'Rebuild Sury PECL packaging for Ubuntu 20.04 / PHP 8.4 only')
 }
 
 # Build base serializers first, then their dependents.
@@ -154,9 +154,9 @@ for ext in apcu igbinary msgpack redis imagick memcached; do
   prepare_control "$sourcedir" "$package"
   # The upstream package's original dh-php build rules are preserved.
   (cd "$sourcedir" && dpkg-buildpackage -b -us -uc -j4)
-  mapfile -t produced < <(find "$src" -maxdepth 1 -name "php8.3-${ext}_*.deb" -type f | sort)
+  mapfile -t produced < <(find "$src" -maxdepth 1 -name "php8.4-${ext}_*.deb" -type f | sort)
   if (( ${#produced[@]} != 1 )); then
-    echo "Expected exactly one php8.3-$ext Debian package" >&2
+    echo "Expected exactly one php8.4-$ext Debian package" >&2
     exit 1
   fi
   cp "${produced[0]}" "$OUT/"
@@ -168,5 +168,5 @@ done
 
 (cd "$OUT" && sha256sum ./*.deb > SHA256SUMS)
 for file in "$OUT"/*.deb; do
-  dpkg-deb -c "$file" | grep -E '20230831|/etc/php/8.3/' || true
+  dpkg-deb -c "$file" | grep -E '20240924|/etc/php/8.4/' || true
 done
