@@ -141,9 +141,9 @@ PYREDIS
      'Rebuild Sury PECL packaging for Ubuntu 20.04 / PHP 8.3 only')
 }
 
-# Build base serializers first, then their dependents.
-for ext in apcu igbinary msgpack redis imagick memcached; do
-  package="php-$ext"
+# Build base serializers first, then Redis and independent extensions.
+for ext in apcu igbinary msgpack redis imagick memcached mongodb; do
+  package="php-$ext"  # mongodb uses php-mongodb, not legacy php-mongo
   echo "===== Building $package ====="
   src="$WORK/$package"
   fetch_source "$package" "$src"
@@ -159,6 +159,8 @@ for ext in apcu igbinary msgpack redis imagick memcached; do
     echo "Expected exactly one php8.3-$ext Debian package" >&2
     exit 1
   fi
+  # Check that the produced Debian binary has the expected package name.
+  [[ $(dpkg-deb -f "${produced[0]}" Package) == "php8.3-${ext}" ]]
   cp "${produced[0]}" "$OUT/"
   dpkg-deb -f "${produced[0]}" Package Version Depends
   if [[ $ext == apcu || $ext == igbinary || $ext == msgpack ]]; then
@@ -166,6 +168,8 @@ for ext in apcu igbinary msgpack redis imagick memcached; do
   fi
 done
 
+mapfile -t output_debs < <(find "$OUT" -maxdepth 1 -name '*.deb' -type f | sort)
+(( ${#output_debs[@]} == 7 )) || { echo "Expected 7 PECL packages, got ${#output_debs[@]}" >&2; exit 1; }
 (cd "$OUT" && sha256sum ./*.deb > SHA256SUMS)
 for file in "$OUT"/*.deb; do
   dpkg-deb -c "$file" | grep -E '20230831|/etc/php/8.3/' || true
