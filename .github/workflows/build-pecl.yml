@@ -1,4 +1,4 @@
-name: Build PHP 8.x PECL (Ubuntu 20.04)
+name: Build PHP 8.3 PECL (Ubuntu 20.04)
 
 on:
   workflow_dispatch:
