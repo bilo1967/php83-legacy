@@ -1,0 +1,99 @@
+name: Attach PHP PECL packages to draft release
+
+on:
+  workflow_dispatch:
+    inputs:
+      pecl_run_id:
+        description: 'Successful PECL build run ID'
+        required: true
+        type: string
+      release_tag:
+        description: 'Existing draft release tag (v8.x.xx-pecl-focal.y)'
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: publish-php-pecl-focal
+  cancel-in-progress: false
+
+jobs:
+  attach:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Validate tag and source build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ inputs.pecl_run_id }}
+          TAG: ${{ inputs.release_tag }}
+          BRANCH: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if [[ "$TAG" =~ ^v(8\.[0-9]+)\.[0-9]+-pecl-focal\.[0-9]+$ ]]; then
+            PHP_MINOR="${BASH_REMATCH[1]}"
+          else
+            echo "Invalid PECL release tag: $TAG"; exit 1
+          fi
+          [[ "$RUN_ID" =~ ^[0-9]+$ ]] || { echo 'Invalid run ID'; exit 1; }
+          read -r result source_branch < <(gh api "repos/$REPO/actions/runs/$RUN_ID" --jq '[.conclusion,.head_branch] | join(" ")')
+          [[ "$result" == success && "$source_branch" == "$BRANCH" ]] || {
+            echo "Build run must have succeeded on $BRANCH (got $result on $source_branch)"; exit 1;
+          }
+          draft="$(gh release view "$TAG" --repo "$REPO" --json isDraft --jq '.isDraft')"
+          [[ "$draft" == true ]] || { echo "Release $TAG must exist as a draft"; exit 1; }
+          echo "PHP_MINOR=$PHP_MINOR" >> "$GITHUB_ENV"
+
+      - name: Download PECL artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ inputs.pecl_run_id }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p artifacts/pecl
+          gh run download "$RUN_ID" --repo "$REPO" \
+            --name "php${PHP_MINOR}-pecl-ubuntu20.04-amd64" --dir artifacts/pecl
+
+      - name: Validate and stage packages
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          shopt -s nullglob globstar
+          packages=(artifacts/pecl/**/*.deb)
+          extensions=(apcu igbinary msgpack redis imagick memcached mongodb)
+          if [[ "$PHP_MINOR" == 8.4 ]]; then
+            extensions+=(imap pspell)
+          fi
+          (( ${#packages[@]} == ${#extensions[@]} )) || {
+            echo "Expected ${#extensions[@]} PECL packages, found ${#packages[@]}"; exit 1;
+          }
+          mkdir -p release-assets
+          for extension in "${extensions[@]}"; do
+            matches=(artifacts/pecl/**/php"${PHP_MINOR}"-"${extension}"_*.deb)
+            (( ${#matches[@]} == 1 )) || { echo "Missing/duplicate: $extension"; exit 1; }
+          done
+          for file in "${packages[@]}"; do
+            name="${file##*/}"
+            [[ "$name" == php"${PHP_MINOR}"-* ]] || { echo "Unexpected package: $name"; exit 1; }
+            [[ ! -e "release-assets/$name" ]] || { echo "Duplicate: $name"; exit 1; }
+            cp -- "$file" "release-assets/$name"
+          done
+          (cd release-assets && sha256sum ./*.deb > SHA256SUMS)
+
+      - name: Upload to existing draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ inputs.release_tag }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          gh release upload "$TAG" release-assets/*.deb release-assets/SHA256SUMS --repo "$REPO"
+          echo "Assets attached to draft $TAG; not published."
