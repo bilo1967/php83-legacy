@@ -21,7 +21,7 @@ apt-get install -y --no-install-recommends \
   build-essential pkg-config autoconf automake libtool re2c \
   libmagickwand-dev libmemcached-dev libsasl2-dev zlib1g-dev \
   liblz4-dev libzstd-dev libssl-dev libhashkit-dev \
-  libpcre3-dev libxml2-dev
+  libpcre3-dev libxml2-dev libsnappy-dev
 
 # Ubuntu Focal ships dh-php 0.35, but the current Sury PECL sources
 # require dh-php >= 5.5. Install Sury's newer architecture-independent
