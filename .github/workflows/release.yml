@@ -6,10 +6,9 @@ on:
       php_run_id:
         description: 'Successful PHP build run ID'
         required: true
-        default: '42250131047'
         type: string
       pecl_run_id:
-        description: 'Successful PECL build run ID (with Redis msgpack fix)'
+        description: 'Successful PECL build run ID'
         required: true
         type: string
       release_tag:
