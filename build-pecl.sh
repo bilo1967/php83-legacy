@@ -21,7 +21,8 @@ apt-get install -y --no-install-recommends \
   build-essential pkg-config autoconf automake libtool re2c \
   libmagickwand-dev libmemcached-dev libsasl2-dev zlib1g-dev \
   liblz4-dev libzstd-dev libssl-dev libhashkit-dev \
-  libpcre3-dev libxml2-dev
+  libpcre3-dev libxml2-dev \
+  libkrb5-dev libc-client2007e-dev libaspell-dev
 
 # Ubuntu Focal ships dh-php 0.35, but the current Sury PECL sources
 # require dh-php >= 5.5. Install Sury's newer architecture-independent
@@ -124,7 +125,7 @@ header = re.sub(r'php-(apcu|igbinary|msgpack)-all-dev\s*\([^)]*\)',
 header = re.sub(r'php-(apcu|igbinary|msgpack)-all-dev\b',
                 r'php8.4-\1', header)
 # Rebuild ONLY php8.4-$extension, retaining Sury's metadata and maintainer scripts.
-kept = [p for p in parts[1:] if re.match(r'Package: php8\.3-' + re.escape(package[4:]) + r'\s*$', p.splitlines()[0])]
+kept = [p for p in parts[1:] if re.match(r'Package: php8\.4-' + re.escape(package[4:]) + r'\s*$', p.splitlines()[0])]
 if len(kept) != 1:
     raise SystemExit(f'Cannot identify unique php8.4 binary stanza in {control}: {[p.splitlines()[0] for p in parts[1:]]}')
 control.write_text(header.rstrip() + '\n\n' + kept[0].lstrip())
@@ -151,9 +152,9 @@ PYREDIS
      'Rebuild Sury PECL packaging for Ubuntu 20.04 / PHP 8.4 only')
 }
 
-# Build base serializers first, then their dependents.
-for ext in apcu igbinary msgpack redis imagick memcached; do
-  package="php-$ext"
+# Build base serializers first, then Redis and independent extensions.
+for ext in apcu igbinary msgpack redis imagick memcached imap pspell mongodb; do
+  package="php-$ext"  # mongodb uses php-mongodb, not legacy php-mongo
   echo "===== Building $package ====="
   src="$WORK/$package"
   fetch_source "$package" "$src"
@@ -169,6 +170,8 @@ for ext in apcu igbinary msgpack redis imagick memcached; do
     echo "Expected exactly one php8.4-$ext Debian package" >&2
     exit 1
   fi
+  # Check that the produced Debian binary has the expected package name.
+  [[ $(dpkg-deb -f "${produced[0]}" Package) == "php8.4-${ext}" ]]
   cp "${produced[0]}" "$OUT/"
   dpkg-deb -f "${produced[0]}" Package Version Depends
   if [[ $ext == apcu || $ext == igbinary || $ext == msgpack ]]; then
@@ -176,6 +179,8 @@ for ext in apcu igbinary msgpack redis imagick memcached; do
   fi
 done
 
+mapfile -t output_debs < <(find "$OUT" -maxdepth 1 -name '*.deb' -type f | sort)
+(( ${#output_debs[@]} == 9 )) || { echo "Expected 9 PECL packages, got ${#output_debs[@]}" >&2; exit 1; }
 (cd "$OUT" && sha256sum ./*.deb > SHA256SUMS)
 for file in "$OUT"/*.deb; do
   dpkg-deb -c "$file" | grep -E '20240924|/etc/php/8.4/' || true
